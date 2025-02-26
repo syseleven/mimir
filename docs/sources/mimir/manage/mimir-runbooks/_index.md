@@ -163,6 +163,15 @@ How to **fix** it:
 1. Ensure shuffle-sharding is enabled in the Mimir cluster
 1. Assuming shuffle-sharding is enabled, scaling up ingesters will lower the number of tenants per ingester. However, the effect of this change will be visible only after `-blocks-storage.tsdb.close-idle-tsdb-timeout` period so you may have to temporarily increase the limit
 
+### MimirDistributorGcUsesTooMuchCpu
+
+This alert fires when distributors spend too much CPU time on garbage collection.
+This is a symptom of setting GOMEMLIMIT too low, so GC is triggered too frequently.
+
+How to **fix** it:
+
+1. Ensure that distributor horizontal pod auto-scaling works properly, so that distributors are scaled out horizontally in response to CPU pressure.
+
 ### MimirDistributorReachingInflightPushRequestLimit
 
 This alert fires when the `cortex_distributor_inflight_push_requests` per distributor instance limit is enabled and the actual number of in-flight push requests is approaching the set limit. Once the limit is reached, push requests to the distributor will fail (5xx) for new requests, while existing in-flight push requests will continue to succeed.
@@ -646,7 +655,7 @@ How to **investigate**:
     - **What it means**: Compaction likely was failing for some reason in the past and now there is too much work to catch up at the current configuration and scaling level. This can also result in long-term queries failing as the store-gateways fail to handle the much larger number of smaller blocks than expected.
     - **How to mitigate**: Reconfigure and modify the compactor settings and resources for more scalability:
       - Ensure your compactors are at least sized according to the [Planning capacity]({{< relref "../run-production-environment/planning-capacity#compactor" >}}) page and you have the recommended number of replicas.
-      - Set `-compactor.split-groups` and `-compactor.split-and-merge-shards` to a value that is 1 for every 8M active series you have - rounded to the closest even number. So, if you have 100M series - `100/8 = 12.5` = value of `12`.
+      - Set `-compactor.split-groups` and `-compactor.split-and-merge-shards` to a value that is 1 for every 8M active series you have - rounded to the closest even number. So, if you have 100M series - `100/8 = 12.5` = value of `12`. If you are using query sharding on the query frontend, it is recommended to use the next power of 2 instead to avoid extra work on the read path (a value of `16` instead of `12` in the example), [see this blog post for more info](https://grafana.com/blog/2022/04/19/how-grafana-mimirs-split-and-merge-compactor-enables-scaling-metrics-to-1-billion-active-series/).
       - Allow the compactor to run for some hours and see if the runs begin to succeed and the `Average blocks / tenant` starts to decrease.
       - If you encounter any Compactor resource issues, add CPU/Memory as needed temporarily, then scale back later.
       - You can also optionally scale replicas and shards further to split the work up into even smaller pieces until the situation has recovered.
@@ -1448,10 +1457,6 @@ How to **investigate** and **fix** it:
   - Investigate which tenants use most of the store-gateway disk in the replicas with highest disk utilization. To investigate it you can run the following command for a given store-gateway replica. The command returns the top 10 tenants by disk utilization (in megabytes):
 
     ```
-    # If you're running the alpine image:
-    kubectl --context $CLUSTER --namespace $NAMESPACE exec -ti $POD -- sh -c 'du -sm /data/tsdb/* | sort -n -r | head -10'
-
-    # If you're running the distroless image:
     kubectl --context $CLUSTER --namespace $NAMESPACE debug pod/$POD --image=alpine:latest --target=store-gateway --container=debug -ti -- sh -c 'du -sm /proc/1/root/data/tsdb/* | sort -n -r | head -10'
     ```
 
@@ -2167,6 +2172,21 @@ How to **fix** it:
 - Check the write requests latency through the `Mimir / Writes` dashboard and come back to investigate the root cause of high latency (the higher the latency, the higher the number of in-flight write requests).
 - Consider scaling out the ingesters.
 
+### err-mimir-ingester-max-inflight-read-requests
+
+This error occurs when an ingester rejects a read request because the maximum in-flight requests limit has been reached.
+
+How it **works**:
+
+- The ingester has a per-instance limit on the number of in-flight read requests.
+- The limit applies to all in-flight read requests, across all tenants, and it protects the ingester from becoming overloaded in case of high traffic.
+- To configure the limit, set the `-ingester.read-reactive-limiter` options.
+
+How to **fix** it:
+
+- Check the read requests latency through the `Mimir / Reads` dashboard and come back to investigate the root cause of high latency (the higher the latency, the higher the number of in-flight read requests).
+- Consider scaling out the ingesters.
+
 ### err-mimir-max-series-per-user
 
 This error occurs when the number of in-memory series for a given tenant exceeds the configured limit.
@@ -2553,6 +2573,19 @@ How it **works**:
 How to **fix** it:
 
 This error only occurs when an administrator has explicitly define a blocked list for a given tenant. After assessing whether or not the reason for blocking one or multiple queries you can update the tenant's limits and remove the pattern.
+
+### err-mimir-request-blocked
+
+This error occurs when a query-frontend blocks a HTTP request because the request matches at least one of the rules defined in the limits.
+
+How it **works**:
+
+- The query-frontend implements a checker responsible for assessing whether the request is blocked or not.
+- To configure the limit, set the block `blocked_requests` in the `limits`.
+
+How to **fix** it:
+
+This error only occurs when an administrator has explicitly define a blocked list for a given tenant. After assessing whether or not the reason for blocking one or multiple requests you can update the tenant's limits and remove the configuration.
 
 ### err-mimir-alertmanager-max-grafana-config-size
 

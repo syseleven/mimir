@@ -4,13 +4,23 @@
 
 ### Grafana Mimir
 
+* [FEATURE] Ingester/Distributor: Add support for exporting cost attribution metrics (`cortex_ingester_attributed_active_series`, `cortex_distributor_received_attributed_samples_total`, and `cortex_discarded_attributed_samples_total`) with labels specified by customers to a custom Prometheus registry. This feature enables more flexible billing data tracking. #10269 #10702
+* [CHANGE] Querier: pass context to queryable `IsApplicable` hook. #10451
 * [CHANGE] Distributor: OTLP and push handler replace all non-UTF8 characters with the unicode replacement character `\uFFFD` in error messages before propagating them. #10236
 * [CHANGE] Querier: pass query matchers to queryable `IsApplicable` hook. #10256
+* [CHANGE] Build: removed Mimir Alpine Docker image and related CI tests. #10469
 * [CHANGE] Query-frontend: Add `topic` label to `cortex_ingest_storage_strong_consistency_requests_total`, `cortex_ingest_storage_strong_consistency_failures_total`, and `cortex_ingest_storage_strong_consistency_wait_duration_seconds` metrics. #10220
 * [CHANGE] Ruler: cap the rate of retries for remote query evaluation to 170/sec. This is configurable via `-ruler.query-frontend.max-retries-rate`. #10375 #10403
+* [CHANGE] Query-frontend: Add `topic` label to `cortex_ingest_storage_reader_last_produced_offset_requests_total`, `cortex_ingest_storage_reader_last_produced_offset_failures_total`, `cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds`, `cortex_ingest_storage_reader_partition_start_offset_requests_total`, `cortex_ingest_storage_reader_partition_start_offset_failures_total`, `cortex_ingest_storage_reader_partition_start_offset_request_duration_seconds` metrics. #10462
+* [CHANGE] Ingester: Set `-ingester.ooo-native-histograms-ingestion-enabled` to true by default. #10483
+* [CHANGE] Ruler: Add `user` and `reason` labels to `cortex_ruler_write_requests_failed_total` and `cortex_ruler_queries_failed_total`; add `user` to
+    `cortex_ruler_write_requests_total` and `cortex_ruler_queries_total` metrics. #10536
+* [CHANGE] Querier / Query-frontend: Remove experimental `-querier.promql-experimental-functions-enabled` and `-query-frontend.block-promql-experimental-functions` CLI flags and respective YAML configuration options to enable experimental PromQL functions. Instead access to experimental PromQL functions is always blocked. You can enable them using the per-tenant setting `enabled_promql_experimental_functions`. #10660 #10712
+* [FEATURE] Distributor: Add experimental Influx handler. #10153
+* [ENHANCEMENT] Compactor: Expose `cortex_bucket_index_last_successful_update_timestamp_seconds` for all tenants assigned to the compactor before starting the block cleanup job. #10569
 * [ENHANCEMENT] Query Frontend: Return server-side `samples_processed` statistics. #10103
 * [ENHANCEMENT] Distributor: OTLP receiver now converts also metric metadata. See also https://github.com/prometheus/prometheus/pull/15416. #10168
-* [ENHANCEMENT] Distributor: discard float and histogram samples with duplicated timestamps from each timeseries in a request before the request is forwarded to ingesters. Discarded samples are tracked by the `cortex_discarded_samples_total` metrics with reason `sample_duplicate_timestamp`. #10145
+* [ENHANCEMENT] Distributor: discard float and histogram samples with duplicated timestamps from each timeseries in a request before the request is forwarded to ingesters. Discarded samples are tracked by `cortex_discarded_samples_total` metrics with the reason `sample_duplicate_timestamp`. #10145 #10430
 * [ENHANCEMENT] Ruler: Add `cortex_prometheus_rule_group_last_rule_duration_sum_seconds` metric to track the total evaluation duration of a rule group regardless of concurrency #10189
 * [ENHANCEMENT] Distributor: Add native histogram support for `electedReplicaPropagationTime` metric in ha_tracker. #10264
 * [ENHANCEMENT] Ingester: More efficient CPU/memory utilization-based read request limiting. #10325
@@ -18,9 +28,39 @@
 * [ENHANCEMENT] OTLP: In addition to the flag `-distributor.otel-created-timestamp-zero-ingestion-enabled` there is now `-distributor.otel-start-time-quiet-zero` to convert OTel start timestamps to Prometheus QuietZeroNaNs. This flag is to make the change rollout safe between Ingesters and Distributors. #10238
 * [ENHANCEMENT] Ruler: When rule concurrency is enabled for a rule group, its rules will now be reordered and run in batches based on their dependencies. This increases the number of rules that can potentially run concurrently. Note that the global and tenant-specific limits still apply #10400
 * [ENHANCEMENT] Query-frontend: include more information about read consistency in trace spans produced when using experimental ingest storage. #10412
+* [ENHANCEMENT] Ingester: Hide tokens in ingester ring status page when ingest storage is enabled #10399
+* [ENHANCEMENT] Ingester: add `active_series_additional_custom_trackers` configuration, in addition to the already existing `active_series_custom_trackers`. The `active_series_additional_custom_trackers` configuration allows you to configure additional custom trackers that get merged with `active_series_custom_trackers` at runtime. #10428
+* [ENHANCEMENT] Query-frontend: Allow blocking raw http requests with the `blocked_requests` configuration. Requests can be blocked based on their path, method or query parameters #10484
+* [ENHANCEMENT] Ingester: Added the following metrics exported by `PostingsForMatchers` cache: #10500 #10525
+* [ENHANCEMENT] Add support for the HTTP header `X-Filter-Queryables` which allows callers to decide which queryables should be used by the querier, useful for debugging and testing queryables in isolation. #10552 #10594
+  * `cortex_ingester_tsdb_head_postings_for_matchers_cache_hits_total`
+  * `cortex_ingester_tsdb_head_postings_for_matchers_cache_misses_total`
+  * `cortex_ingester_tsdb_head_postings_for_matchers_cache_requests_total`
+  * `cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total`
+  * `cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total`
+  * `cortex_ingester_tsdb_block_postings_for_matchers_cache_hits_total`
+  * `cortex_ingester_tsdb_block_postings_for_matchers_cache_misses_total`
+  * `cortex_ingester_tsdb_block_postings_for_matchers_cache_requests_total`
+  * `cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total`
+  * `cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total`
+* [ENHANCEMENT] Compactor: Shuffle users' order in `BlocksCleaner`. Prevents bucket indexes from going an extended period without cleanup during compactor restarts. #10513
+* [ENHANCEMENT] Distributor, querier, ingester and store-gateway: Add support for `limit` parameter for label names and values requests. #10410
+* [ENHANCEMENT] Query-frontend: Allow adjustment of queries looking into the future to a maximum duration with experimental `-query-frontend.max-future-query-window` flag. #10547
+* [ENHANCEMENT] Ruler: Adds support for filtering results from rule status endpoint by `file[]`, `rule_group[]` and `rule_name[]`. #10589
+* [ENHANCEMENT] Query-frontend: Add option to "spin off" subqueries as actual range queries, so that they benefit from query acceleration techniques such as sharding, splitting and caching. To enable this, set the `-query-frontend.spin-off-instant-subqueries-to-url=<url>` option on the frontend and the `instant_queries_with_subquery_spin_off` per-tenant override with regular expressions matching the queries to enable. #10460 #10603 #10621
+* [ENHANCEMENT] Querier, ingester: The series API respects passed `limit` parameter. #10620 #10652
+* [ENHANCEMENT] Store-gateway: Add experimental settings under `-store-gateway.dynamic-replication` to allow more than the default of 3 store-gateways to own recent blocks. #10382 #10637
+* [ENHANCEMENT] Ingester: Add reactive concurrency limiters to protect push and read operations from overload. #10574
+* [ENHANCEMENT] Compactor: Add experimental `-compactor.max-lookback` option to limit blocks considered in each compaction cycle. Blocks uploaded prior to the lookback period aren't processed. This option helps reduce CPU utilization in tenants with large block metadata files that are processed before each compaction. #10585
+* [ENHANCEMENT] Distributor: Optionally expose the current HA replica for each tenant in the `cortex_ha_tracker_elected_replica_status` metric. This is enabled with the `-distributor.ha-tracker.enable-elected-replica-metric=true` flag. #10644
+* [ENHANCEMENT] Enable three Go runtime metrics: #10641
+  * `go_cpu_classes_gc_total_cpu_seconds_total`
+  * `go_cpu_classes_total_cpu_seconds_total`
+  * `go_cpu_classes_idle_cpu_seconds_total`
 * [BUGFIX] Distributor: Use a boolean to track changes while merging the ReplicaDesc components, rather than comparing the objects directly. #10185
 * [BUGFIX] Querier: fix timeout responding to query-frontend when response size is very close to `-querier.frontend-client.grpc-max-send-msg-size`. #10154
 * [BUGFIX] Query-frontend and querier: show warning/info annotations in some cases where they were missing (if a lazy querier was used). #10277
+* [BUGFIX] Query-frontend: Fix an issue where transient errors are inadvertently cached. #10537 #10631
 * [BUGFIX] Ruler: fix indeterminate rules being always run concurrently (instead of never) when `-ruler.max-independent-rule-evaluation-concurrency` is set. https://github.com/prometheus/prometheus/pull/15560 #10258
 * [BUGFIX] PromQL: Fix various UTF-8 bugs related to quoting. https://github.com/prometheus/prometheus/pull/15531 #10258
 * [BUGFIX] Ruler: Fixed an issue when using the experimental `-ruler.max-independent-rule-evaluation-concurrency` feature, where if a rule group was eligible for concurrency, it would flap between running concurrently or not based on the time it took after running concurrently. #9726 #10189
@@ -29,27 +69,63 @@
 * [BUGFIX] MQE: Fix deriv with histograms #10383
 * [BUGFIX] PromQL: Fix <aggr_over_time> functions with histograms https://github.com/prometheus/prometheus/pull/15711 #10400
 * [BUGFIX] MQE: Fix <aggr_over_time> functions with histograms #10400
+* [BUGFIX] Distributor: return HTTP status 415 Unsupported Media Type instead of 200 Success for Remote Write 2.0 until we support it. #10423
+* [BUGFIX] Query-frontend: Add flag `-query-frontend.prom2-range-compat` and corresponding YAML to rewrite queries with ranges that worked in Prometheus 2 but are invalid in Prometheus 3. #10445 #10461 #10502
+* [BUGFIX] Distributor: Fix edge case at the HA-tracker with memberlist as KVStore, where when a replica in the KVStore is marked as deleted but not yet removed, it fails to update the KVStore. #10443
+* [BUGFIX] Distributor: Fix panics in `DurationWithJitter` util functions when computed variance is zero. #10507
+* [BUGFIX] Ingester: Fixed a race condition in the `PostingsForMatchers` cache that may have infrequently returned expired cached postings. #10500
+* [BUGFIX] Distributor: Report partially converted OTLP requests with status 400 Bad Request. #10588
 
 ### Mixin
 
+* [FEATURE] Add compiled mixin for GEM installations in `operations/mimir-mixin-compiled-gem`. #10690
+* [ENHANCEMENT] Dashboards: clarify that the ingester and store-gateway panels on the 'Reads' dashboard show data from all query requests to that component, not just requests from the main query path (ie. requests from the ruler query path are included as well). #10598
+* [ENHANCEMENT] Dashboards: add ingester and store-gateway panels from the 'Reads' dashboard to the 'Remote ruler reads' dashboard as well. #10598
+* [ENHANCEMENT] Dashboards: add ingester and store-gateway panels showing only requests from the respective dashboard's query path to the 'Reads' and 'Remote ruler reads' dashboards. For example, the 'Remote ruler reads' dashboard now has panels showing the ingester query request rate from ruler-queriers. #10598
+* [ENHANCEMENT] Dashboards: 'Writes' dashboard: show write requests broken down by request type. #10599
+* [ENHANCEMENT] Dashboards: clarify when query-frontend and query-scheduler dashboard panels are expected to show no data. #10624
+* [ENHANCEMENT] Alerts: Add warning alert `DistributorGcUsesTooMuchCpu`. #10641
+* [ENHANCEMENT] Dashboards: Add "Federation-frontend" dashboard for GEM. #10697
+* [ENHANCEMENT] Alerts: Add "Federation-frontend" alert for remote clusters returning errors. #10698
 * [BUGFIX] Dashboards: fix how we switch between classic and native histograms. #10018
 * [BUGFIX] Alerts: Ignore cache errors performing `delete` operations since these are expected to fail when keys don't exist. #10287
+* [BUGFIX] Dashboards: fix "Mimir / Rollout Progress" latency comparison when gateway is enabled. #10495
+* [BUGFIX] Dashboards: fix autoscaling panels when Mimir is deployed using Helm. #10473
+* [BUGFIX] Alerts: fix `MimirAutoscalerNotActive` alert. #10564
 
 ### Jsonnet
 
 * [CHANGE] Update rollout-operator version to 0.22.0. #10229
 * [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
+* [CHANGE] Change multi-AZ deployments default toleration value from 'multi-az' to 'secondary-az', and make it configurable via the following settings: #10596
+  * `_config.multi_zone_schedule_toleration` (default)
+  * `_config.multi_zone_distributor_schedule_toleration` (distributor's override)
+  * `_config.multi_zone_etcd_schedule_toleration` (etcd's override)
+* [CHANGE] Ring: relaxed the hash ring heartbeat timeout for store-gateways: #10634
+  * `-store-gateway.sharding-ring.heartbeat-timeout` set to `10m`
 * [ENHANCEMENT] Enforce `persistentVolumeClaimRetentionPolicy` `Retain` policy on partition ingesters during migration to experimental ingest storage. #10395
+* [ENHANCEMENT] Allow to not configure `topologySpreadConstraints` by setting the following configuration options to a negative value: #10540
+  * `distributor_topology_spread_max_skew`
+  * `query_frontend_topology_spread_max_skew`
+  * `querier_topology_spread_max_skew`
+  * `ruler_topology_spread_max_skew`
+  * `ruler_querier_topology_spread_max_skew`
 * [BUGFIX] Ports in container rollout-operator. #10273
+* [BUGFIX] When downscaling is enabled, the components must annotate `prepare-downscale-http-port` with the value set in `$._config.server_http_port`. #10367
 
 ### Mimirtool
 
 * [BUGFIX] Fix issue where `MIMIR_HTTP_PREFIX` environment variable was ignored and the value from `MIMIR_MIMIR_HTTP_PREFIX` was used instead. #10207
 * [ENHANCEMENT] Unify mimirtool authentication options and add extra-headers support for commands that depend on MimirClient. #10178
+* [ENHANCEMENT] `mimirtool grafana analyze` now supports custom panels. #10669
+* [ENHANCEMENT] `mimirtool grafana analyze` now supports bar chart, pie chart, state timeline, status history,
+  histogram, candlestick, canvas, flame graph, geomap, node graph, trend, and XY chart panels. #10669
 
 ### Mimir Continuous Test
 
 ### Query-tee
+
+* [ENHANCEMENT] Allow skipping comparisons when preferred backend fails. Disabled by default, enable with `-proxy.compare-skip-preferred-backend-failures=true`. #10612
 
 ### Documentation
 
@@ -185,6 +261,7 @@
 * [ENHANCEMENT] Dashboards: Include block compaction level on queried blocks in 'Mimir / Queries' dashboard. #9706
 * [ENHANCEMENT] Alerts: add `MimirIngesterMissedRecordsFromKafka` to detect gaps in consumed records in the ingester when using the experimental Kafka-based storage. #9921 #9972
 * [ENHANCEMENT] Dashboards: Add more panels to 'Mimir / Writes' for concurrent ingestion and fetching when using ingest storage. #10021
+* [ENHANCEMENT] Dashboards: Include CPU and memory resources in 'Mimir / Ruler' dashboard. #10656
 * [BUGFIX] Dashboards: Fix autoscaling metrics joins when series churn. #9412 #9450 #9432
 * [BUGFIX] Alerts: Fix autoscaling metrics joins in `MimirAutoscalerNotActive` when series churn. #9412
 * [BUGFIX] Alerts: Exclude failed cache "add" operations from alerting since failures are expected in normal operation. #9658

@@ -85,6 +85,17 @@ func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *defaultHaTra
 	})
 }
 
+func waitForHaTrackerCacheEntryRemoval(t require.TestingT, tracker *defaultHaTracker, user string, cluster string, duration time.Duration, tick time.Duration) bool {
+	condition := assert.Eventually(t, func() bool {
+		tracker.electedLock.RLock()
+		defer tracker.electedLock.RUnlock()
+
+		info := tracker.clusters[user][cluster]
+		return info == nil
+	}, duration, tick)
+	return condition
+}
+
 func merge(r1, r2 *ReplicaDesc) (*ReplicaDesc, *ReplicaDesc) {
 	change, err := r1.Merge(r2, false)
 	if err != nil {
@@ -307,8 +318,7 @@ func TestHaTrackerWithMemberList(t *testing.T) {
 	// Update KVStore - this should elect replica 2.
 	tracker.updateKVStoreAll(context.Background(), now)
 
-	// Evaluate up to 2 seconds to verify whether the tracker’s cache replica has been updated to r2.
-	checkReplicaTimestamp(t, 2*time.Second, tracker, "user", cluster, replica2, now, now)
+	checkReplicaTimestamp(t, 100*time.Millisecond, tracker, "user", cluster, replica2, now, now)
 
 	// Now we should accept from replica 2.
 	err = tracker.checkReplica(context.Background(), "user", cluster, replica2, now)
@@ -317,6 +327,84 @@ func TestHaTrackerWithMemberList(t *testing.T) {
 	// We timed out accepting samples from replica 1 and should now reject them.
 	err = tracker.checkReplica(context.Background(), "user", cluster, replica1, now)
 	assert.Error(t, err)
+}
+
+func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateIsNotFailing(t *testing.T) {
+	var config memberlist.KVConfig
+
+	const (
+		cluster                  = "cluster"
+		tenant                   = "tenant"
+		replica1                 = "r1"
+		replica2                 = "r2"
+		updateTimeout            = time.Millisecond * 100
+		failoverTimeout          = 2 * time.Millisecond
+		failoverTimeoutPlus100ms = failoverTimeout + 100*time.Millisecond
+	)
+
+	flagext.DefaultValues(&config)
+	ctx := context.Background()
+
+	config.Codecs = []codec.Codec{
+		GetReplicaDescCodec(),
+	}
+
+	memberListSvc := memberlist.NewKVInitService(
+		&config,
+		log.NewNopLogger(),
+		&dnsProviderMock{},
+		prometheus.NewPedanticRegistry(),
+	)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, memberListSvc))
+	t.Cleanup(func() {
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, memberListSvc))
+	})
+
+	tracker, err := newHaTracker(HATrackerConfig{
+		EnableHATracker: true,
+		KVStore: kv.Config{Store: "memberlist", StoreConfig: kv.StoreConfig{
+			MemberlistKV: memberListSvc.GetMemberlistKV,
+		}},
+		UpdateTimeout:          updateTimeout,
+		UpdateTimeoutJitterMax: 0,
+		FailoverTimeout:        failoverTimeout,
+	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, tracker))
+
+	t.Cleanup(func() {
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, tracker))
+	})
+
+	now := time.Now()
+
+	// Write the first time.
+	err = tracker.checkReplica(context.Background(), tenant, cluster, replica1, now)
+	assert.NoError(t, err)
+
+	key := fmt.Sprintf("%s/%s", tenant, cluster)
+
+	// Mark the ReplicaDesc as deleted in the KVStore, which will also remove it from the tracker cache.
+	err = tracker.client.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
+		d, ok := in.(*ReplicaDesc)
+		if !ok || d == nil {
+			return nil, false, nil
+		}
+		d.DeletedAt = timestamp.FromTime(time.Now())
+		return d, true, nil
+	})
+	require.NoError(t, err)
+
+	condition := waitForHaTrackerCacheEntryRemoval(t, tracker, tenant, cluster, 10*time.Second, 50*time.Millisecond)
+	require.True(t, condition)
+
+	now = now.Add(failoverTimeoutPlus100ms)
+	// check replica2
+	err = tracker.checkReplica(context.Background(), tenant, cluster, replica2, now)
+	assert.NoError(t, err)
+
+	// check replica1
+	assert.ErrorAs(t, tracker.checkReplica(context.Background(), tenant, cluster, replica1, now), &replicasDidNotMatchError{})
 }
 
 func TestHATrackerCacheSyncOnStart(t *testing.T) {
@@ -516,7 +604,8 @@ func TestHATrackerCheckReplicaOverwriteTimeout(t *testing.T) {
 	// Update KVStore - this should elect replica 2.
 	c.updateKVStoreAll(context.Background(), now)
 
-	checkReplicaTimestamp(t, 2*time.Second, c, "user", "test", replica2, now, now)
+	// Validate Replica
+	checkReplicaTimestamp(t, 100*time.Millisecond, c, "user", "test", replica2, now, now)
 
 	// Now we should accept from replica 2.
 	err = c.checkReplica(context.Background(), "user", "test", replica2, now)
@@ -625,7 +714,8 @@ func TestHATrackerCheckReplicaMultiClusterTimeout(t *testing.T) {
 	err = c.checkReplica(context.Background(), "user", "c1", replica2, now)
 	assert.Error(t, err)
 	c.updateKVStoreAll(context.Background(), now)
-	checkReplicaTimestamp(t, 2*time.Second, c, "user", "c1", replica2, now, now)
+
+	checkReplicaTimestamp(t, 100*time.Millisecond, c, "user", "c1", replica2, now, now)
 
 	// Accept a sample from c1/replica2.
 	err = c.checkReplica(context.Background(), "user", "c1", replica2, now)
@@ -1048,6 +1138,63 @@ func TestHATracker_MetricsCleanup(t *testing.T) {
 		# TYPE cortex_ha_tracker_kv_store_cas_total counter
 		cortex_ha_tracker_kv_store_cas_total{cluster="cluster",user="userB"} 10
 	`), metrics...))
+}
+
+func TestHATracker_RecordElectedReplicaStatus(t *testing.T) {
+	cluster := "c1"
+	userID := "user"
+
+	reg := prometheus.NewPedanticRegistry()
+	logger := utiltest.NewTestingLogger(t)
+
+	kvStore, closer := consul.NewInMemoryClient(GetReplicaDescCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	mock := kv.PrefixClient(kvStore, "prefix")
+	c, err := newHaTracker(HATrackerConfig{
+		EnableHATracker:        true,
+		KVStore:                kv.Config{Mock: mock},
+		UpdateTimeout:          1 * time.Second,
+		UpdateTimeoutJitterMax: 0,
+		FailoverTimeout:        time.Second,
+	}, trackerLimits{maxClusters: 100}, reg, logger)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+	defer services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck
+
+	c.updateCache(userID, cluster, &ReplicaDesc{
+		Replica: "r1",
+	})
+
+	// There should be no metrics recorded, since it's not enabled.
+	require.Error(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ha_tracker_elected_replica_status The current elected replica for a user ID/cluster.
+		# TYPE cortex_ha_tracker_elected_replica_status counter
+		cortex_ha_tracker_elected_replica_status{cluster="c1",replica="r1",user="user"} 1
+	`), "cortex_ha_tracker_elected_replica_status"))
+
+	// Enable the metric and change the replica
+	c.cfg.EnableElectedReplicaMetric = true
+	c.updateCache(userID, cluster, &ReplicaDesc{
+		Replica: "r2",
+	})
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ha_tracker_elected_replica_status The current elected replica for a user ID/cluster.
+		# TYPE cortex_ha_tracker_elected_replica_status counter
+		cortex_ha_tracker_elected_replica_status{cluster="c1",replica="r2",user="user"} 1
+	`), "cortex_ha_tracker_elected_replica_status"))
+
+	// Change the replica
+	c.cfg.EnableElectedReplicaMetric = true
+	c.updateCache(userID, cluster, &ReplicaDesc{
+		Replica: "r3",
+	})
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_ha_tracker_elected_replica_status The current elected replica for a user ID/cluster.
+		# TYPE cortex_ha_tracker_elected_replica_status counter
+		cortex_ha_tracker_elected_replica_status{cluster="c1",replica="r3",user="user"} 1
+	`), "cortex_ha_tracker_elected_replica_status"))
+
 }
 
 func TestHATrackerCheckReplicaCleanup(t *testing.T) {

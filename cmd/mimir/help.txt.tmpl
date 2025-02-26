@@ -351,6 +351,8 @@ Usage of ./cmd/mimir/mimir:
     	Hostname and port of Consul. (default "localhost:8500")
   -distributor.ha-tracker.enable
     	Enable the distributors HA tracker so that it can accept samples from Prometheus HA replicas gracefully (requires labels).
+  -distributor.ha-tracker.enable-elected-replica-metric
+    	Enable the elected_replica_status metric, which shows the current elected replica. It is disabled by default due to the possible high cardinality of the metric.
   -distributor.ha-tracker.enable-for-all-users
     	Flag to enable, for all tenants, handling of samples with external labels identifying replicas in an HA Prometheus setup.
   -distributor.ha-tracker.etcd.endpoints string
@@ -514,7 +516,7 @@ Usage of ./cmd/mimir/mimir:
   -modules
     	List available values that can be used as target.
   -overrides-exporter.enabled-metrics comma-separated-list-of-strings
-    	Comma-separated list of metrics to include in the exporter. Allowed metric names: ingestion_rate, ingestion_burst_size, max_global_series_per_user, max_global_series_per_metric, max_global_exemplars_per_user, max_fetched_chunks_per_query, max_fetched_series_per_query, max_fetched_chunk_bytes_per_query, ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant, max_global_metadata_per_user, max_global_metadata_per_metric, request_rate, request_burst_size, alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes. (default ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant)
+    	Comma-separated list of metrics to include in the exporter. Allowed metric names: ingestion_rate, ingestion_burst_size, ingestion_artificial_delay, max_global_series_per_user, max_global_series_per_metric, max_global_exemplars_per_user, max_fetched_chunks_per_query, max_fetched_series_per_query, max_fetched_chunk_bytes_per_query, ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant, max_global_metadata_per_user, max_global_metadata_per_metric, request_rate, request_burst_size, alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes. (default ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant)
   -overrides-exporter.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -overrides-exporter.ring.enabled
@@ -786,7 +788,7 @@ Usage of ./cmd/mimir/mimir:
   -server.throughput.latency-cutoff duration
     	Requests taking over the cutoff are be observed to measure throughput. Server-Timing header is used with specified unit as the indicator, for example 'Server-Timing: unit;val=8.2'. If set to 0, the throughput is not calculated.
   -server.throughput.unit string
-    	Unit of the server throughput metric, for example 'processed_bytes' or 'total_samples'. Observed values are gathered from the 'Server-Timing' header with the 'val' key. If set, it is appended to the request_server_throughput metric name. (default "total_samples")
+    	Unit of the server throughput metric, for example 'processed_bytes' or 'samples_processed'. Observed values are gathered from the 'Server-Timing' header with the 'val' key. If set, it is appended to the request_server_throughput metric name. (default "samples_processed")
   -server.tls-cipher-suites string
     	Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.
   -server.tls-min-version string

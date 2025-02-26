@@ -45,145 +45,164 @@ func init() {
 }
 
 func TestUnsupportedPromQLFeatures(t *testing.T) {
-	featureToggles := EnableAllFeatures
+	features := EnableAllFeatures
 
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"topk(5, metric{})":                     "'topk' aggregation with parameter",
-		`count_values("foo", metric{})`:         "'count_values' aggregation with parameter",
-		"quantile_over_time(0.4, metric{}[5m])": "'quantile_over_time' function",
-		"quantile(0.95, metric{})":              "'quantile' aggregation with parameter",
+		`count_values("foo", metric{})`: "'count_values' aggregation with parameter",
+		"quantile(0.95, metric{})":      "'quantile' aggregation with parameter",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
 		t.Run(expression, func(t *testing.T) {
-			requireQueryIsUnsupported(t, featureToggles, expression, expectedError)
+			requireQueryIsUnsupported(t, features, expression, expectedError)
 		})
 	}
 }
 
 func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 	t.Run("aggregation operations", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableAggregationOperations = false
+		features := EnableAllFeatures
+		features.EnableAggregationOperations = false
 
-		requireQueryIsUnsupported(t, featureToggles, "sum by (label) (metric)", "aggregation operations")
+		requireQueryIsUnsupported(t, features, "sum by (label) (metric)", "aggregation operations")
 	})
 
 	t.Run("vector/vector binary expressions with comparison operation", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableVectorVectorBinaryComparisonOperations = false
+		features := EnableAllFeatures
+		features.EnableVectorVectorBinaryComparisonOperations = false
 
-		requireQueryIsUnsupported(t, featureToggles, "metric{} > other_metric{}", "vector/vector binary expression with '>'")
+		requireQueryIsUnsupported(t, features, "metric{} > other_metric{}", "vector/vector binary expression with '>'")
 
 		// Other operations should still be supported.
-		requireQueryIsSupported(t, featureToggles, "metric{} > 1")
-		requireQueryIsSupported(t, featureToggles, "1 > metric{}")
-		requireQueryIsSupported(t, featureToggles, "2 > bool 1")
-		requireQueryIsSupported(t, featureToggles, "metric{} + other_metric{}")
-		requireQueryIsSupported(t, featureToggles, "metric{} + 1")
-		requireQueryIsSupported(t, featureToggles, "1 + metric{}")
-		requireQueryIsSupported(t, featureToggles, "2 + 1")
-		requireQueryIsSupported(t, featureToggles, "metric{} and other_metric{}")
+		requireQueryIsSupported(t, features, "metric{} > 1")
+		requireQueryIsSupported(t, features, "1 > metric{}")
+		requireQueryIsSupported(t, features, "2 > bool 1")
+		requireQueryIsSupported(t, features, "metric{} + other_metric{}")
+		requireQueryIsSupported(t, features, "metric{} + 1")
+		requireQueryIsSupported(t, features, "1 + metric{}")
+		requireQueryIsSupported(t, features, "2 + 1")
+		requireQueryIsSupported(t, features, "metric{} and other_metric{}")
 	})
 
 	t.Run("vector/scalar binary expressions with comparison operation", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableVectorScalarBinaryComparisonOperations = false
+		features := EnableAllFeatures
+		features.EnableVectorScalarBinaryComparisonOperations = false
 
-		requireQueryIsUnsupported(t, featureToggles, "metric{} > 1", "vector/scalar binary expression with '>'")
-		requireQueryIsUnsupported(t, featureToggles, "1 > metric{}", "vector/scalar binary expression with '>'")
+		requireQueryIsUnsupported(t, features, "metric{} > 1", "vector/scalar binary expression with '>'")
+		requireQueryIsUnsupported(t, features, "1 > metric{}", "vector/scalar binary expression with '>'")
 
 		// Other operations should still be supported.
-		requireQueryIsSupported(t, featureToggles, "metric{} > other_metric{}")
-		requireQueryIsSupported(t, featureToggles, "2 > bool 1")
-		requireQueryIsSupported(t, featureToggles, "metric{} + other_metric{}")
-		requireQueryIsSupported(t, featureToggles, "metric{} + 1")
-		requireQueryIsSupported(t, featureToggles, "1 + metric{}")
-		requireQueryIsSupported(t, featureToggles, "2 + 1")
-		requireQueryIsSupported(t, featureToggles, "metric{} and other_metric{}")
+		requireQueryIsSupported(t, features, "metric{} > other_metric{}")
+		requireQueryIsSupported(t, features, "2 > bool 1")
+		requireQueryIsSupported(t, features, "metric{} + other_metric{}")
+		requireQueryIsSupported(t, features, "metric{} + 1")
+		requireQueryIsSupported(t, features, "1 + metric{}")
+		requireQueryIsSupported(t, features, "2 + 1")
+		requireQueryIsSupported(t, features, "metric{} and other_metric{}")
 	})
 
 	t.Run("scalar/scalar binary expressions with comparison operation", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableScalarScalarBinaryComparisonOperations = false
+		features := EnableAllFeatures
+		features.EnableScalarScalarBinaryComparisonOperations = false
 
-		requireQueryIsUnsupported(t, featureToggles, "2 > bool 1", "scalar/scalar binary expression with '>'")
+		requireQueryIsUnsupported(t, features, "2 > bool 1", "scalar/scalar binary expression with '>'")
 
 		// Other operations should still be supported.
-		requireQueryIsSupported(t, featureToggles, "metric{} > other_metric{}")
-		requireQueryIsSupported(t, featureToggles, "metric{} > 1")
-		requireQueryIsSupported(t, featureToggles, "1 > metric{}")
-		requireQueryIsSupported(t, featureToggles, "metric{} + other_metric{}")
-		requireQueryIsSupported(t, featureToggles, "metric{} + 1")
-		requireQueryIsSupported(t, featureToggles, "1 + metric{}")
-		requireQueryIsSupported(t, featureToggles, "2 + 1")
-		requireQueryIsSupported(t, featureToggles, "metric{} and other_metric{}")
+		requireQueryIsSupported(t, features, "metric{} > other_metric{}")
+		requireQueryIsSupported(t, features, "metric{} > 1")
+		requireQueryIsSupported(t, features, "1 > metric{}")
+		requireQueryIsSupported(t, features, "metric{} + other_metric{}")
+		requireQueryIsSupported(t, features, "metric{} + 1")
+		requireQueryIsSupported(t, features, "1 + metric{}")
+		requireQueryIsSupported(t, features, "2 + 1")
+		requireQueryIsSupported(t, features, "metric{} and other_metric{}")
 	})
 
 	t.Run("binary expressions with logical operations", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableBinaryLogicalOperations = false
+		features := EnableAllFeatures
+		features.EnableBinaryLogicalOperations = false
 
-		requireQueryIsUnsupported(t, featureToggles, "metric{} and other_metric{}", "binary expression with 'and'")
-		requireQueryIsUnsupported(t, featureToggles, "metric{} or other_metric{}", "binary expression with 'or'")
-		requireQueryIsUnsupported(t, featureToggles, "metric{} unless other_metric{}", "binary expression with 'unless'")
+		requireQueryIsUnsupported(t, features, "metric{} and other_metric{}", "binary expression with 'and'")
+		requireQueryIsUnsupported(t, features, "metric{} or other_metric{}", "binary expression with 'or'")
+		requireQueryIsUnsupported(t, features, "metric{} unless other_metric{}", "binary expression with 'unless'")
 
 		// Other operations should still be supported.
-		requireQueryIsSupported(t, featureToggles, "metric{} + other_metric{}")
-		requireQueryIsSupported(t, featureToggles, "metric{} + 1")
-		requireQueryIsSupported(t, featureToggles, "1 + metric{}")
-		requireQueryIsSupported(t, featureToggles, "2 + 1")
-		requireQueryIsSupported(t, featureToggles, "metric{} > other_metric{}")
-		requireQueryIsSupported(t, featureToggles, "metric{} > 1")
-		requireQueryIsSupported(t, featureToggles, "1 > metric{}")
-		requireQueryIsSupported(t, featureToggles, "2 > bool 1")
+		requireQueryIsSupported(t, features, "metric{} + other_metric{}")
+		requireQueryIsSupported(t, features, "metric{} + 1")
+		requireQueryIsSupported(t, features, "1 + metric{}")
+		requireQueryIsSupported(t, features, "2 + 1")
+		requireQueryIsSupported(t, features, "metric{} > other_metric{}")
+		requireQueryIsSupported(t, features, "metric{} > 1")
+		requireQueryIsSupported(t, features, "1 > metric{}")
+		requireQueryIsSupported(t, features, "2 > bool 1")
 	})
 
 	t.Run("scalars", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableScalars = false
+		features := EnableAllFeatures
+		features.EnableScalars = false
 
-		requireQueryIsUnsupported(t, featureToggles, "2", "scalar values")
+		requireQueryIsUnsupported(t, features, "2", "scalar values")
 	})
 
 	t.Run("subqueries", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableSubqueries = false
+		features := EnableAllFeatures
+		features.EnableSubqueries = false
 
-		requireQueryIsUnsupported(t, featureToggles, "sum_over_time(metric[1m:10s])", "subquery")
-	})
-
-	t.Run("histogram_quantile function", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableHistogramQuantileFunction = false
-
-		requireQueryIsUnsupported(t, featureToggles, "histogram_quantile(0.5, metric)", "'histogram_quantile' function")
+		requireQueryIsUnsupported(t, features, "sum_over_time(metric[1m:10s])", "subquery")
 	})
 
 	t.Run("one-to-many and many-to-one binary operations", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableOneToManyAndManyToOneBinaryOperations = false
+		features := EnableAllFeatures
+		features.EnableOneToManyAndManyToOneBinaryOperations = false
 
-		requireQueryIsUnsupported(t, featureToggles, "metric{} + on() group_left() other_metric{}", "binary expression with many-to-one matching")
-		requireQueryIsUnsupported(t, featureToggles, "metric{} + on() group_right() other_metric{}", "binary expression with one-to-many matching")
+		requireQueryIsUnsupported(t, features, "metric{} + on() group_left() other_metric{}", "binary expression with many-to-one matching")
+		requireQueryIsUnsupported(t, features, "metric{} + on() group_right() other_metric{}", "binary expression with one-to-many matching")
+	})
+
+	t.Run("function disabled by name", func(t *testing.T) {
+		features := EnableAllFeatures
+		features.DisabledFunctions = []string{"histogram_quantile", "ceil", "nonexistant"}
+
+		requireQueryIsUnsupported(t, features, "ceil(metric{})", "'ceil' function")
+		requireQueryIsUnsupported(t, features, "histogram_quantile(0.9, h{})", "'histogram_quantile' function")
+	})
+
+	t.Run("aggregation disabled by name", func(t *testing.T) {
+		features := EnableAllFeatures
+		features.DisabledAggregations = []string{"sum", "avg", "MAX"}
+
+		requireQueryIsUnsupported(t, features, "avg by (label) (metric{})", "'avg' aggregation disabled")
+		requireQueryIsUnsupported(t, features, "max(metric{})", "'max' aggregation disabled")
+		requireQueryIsUnsupported(t, features, "SUM(metric{})", "'sum' aggregation disabled")
+	})
+
+	t.Run("unknown aggregation name disabled", func(t *testing.T) {
+		features := EnableAllFeatures
+		features.DisabledAggregations = []string{"sum", "avg", "NotAnAgg"}
+
+		opts := NewTestEngineOpts()
+		opts.Features = features
+		_, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+		require.Error(t, err)
+		require.EqualError(t, err, "disabled aggregation 'NotAnAgg' does not exist")
 	})
 }
 
-func requireQueryIsUnsupported(t *testing.T, toggles FeatureToggles, expression string, expectedError string) {
-	requireRangeQueryIsUnsupported(t, toggles, expression, expectedError)
-	requireInstantQueryIsUnsupported(t, toggles, expression, expectedError)
+func requireQueryIsUnsupported(t *testing.T, features Features, expression string, expectedError string) {
+	requireRangeQueryIsUnsupported(t, features, expression, expectedError)
+	requireInstantQueryIsUnsupported(t, features, expression, expectedError)
 }
 
-func requireQueryIsSupported(t *testing.T, toggles FeatureToggles, expression string) {
-	requireRangeQueryIsSupported(t, toggles, expression)
-	requireInstantQueryIsSupported(t, toggles, expression)
+func requireQueryIsSupported(t *testing.T, features Features, expression string) {
+	requireRangeQueryIsSupported(t, features, expression)
+	requireInstantQueryIsSupported(t, features, expression)
 }
 
-func requireRangeQueryIsUnsupported(t *testing.T, featureToggles FeatureToggles, expression string, expectedError string) {
+func requireRangeQueryIsUnsupported(t *testing.T, features Features, expression string, expectedError string) {
 	opts := NewTestEngineOpts()
-	opts.FeatureToggles = featureToggles
+	opts.Features = features
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -194,9 +213,9 @@ func requireRangeQueryIsUnsupported(t *testing.T, featureToggles FeatureToggles,
 	require.Nil(t, qry)
 }
 
-func requireInstantQueryIsUnsupported(t *testing.T, featureToggles FeatureToggles, expression string, expectedError string) {
+func requireInstantQueryIsUnsupported(t *testing.T, features Features, expression string, expectedError string) {
 	opts := NewTestEngineOpts()
-	opts.FeatureToggles = featureToggles
+	opts.Features = features
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -207,9 +226,9 @@ func requireInstantQueryIsUnsupported(t *testing.T, featureToggles FeatureToggle
 	require.Nil(t, qry)
 }
 
-func requireRangeQueryIsSupported(t *testing.T, featureToggles FeatureToggles, expression string) {
+func requireRangeQueryIsSupported(t *testing.T, features Features, expression string) {
 	opts := NewTestEngineOpts()
-	opts.FeatureToggles = featureToggles
+	opts.Features = features
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -217,9 +236,9 @@ func requireRangeQueryIsSupported(t *testing.T, featureToggles FeatureToggles, e
 	require.NoError(t, err)
 }
 
-func requireInstantQueryIsSupported(t *testing.T, featureToggles FeatureToggles, expression string) {
+func requireInstantQueryIsSupported(t *testing.T, features Features, expression string) {
 	opts := NewTestEngineOpts()
-	opts.FeatureToggles = featureToggles
+	opts.Features = features
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -2228,6 +2247,87 @@ func TestAnnotations(t *testing.T) {
 			},
 		},
 
+		"topk() with only floats": {
+			data: mixedFloatHistogramData,
+			expr: `topk(1, metric{type="float"})`,
+		},
+		"topk() with only histograms()": {
+			data: mixedFloatHistogramData,
+			expr: `topk(1, metric{type="histogram"})`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histogram in topk aggregation (1:1)`,
+			},
+		},
+		"topk() with both floats and histograms()": {
+			data: mixedFloatHistogramData,
+			expr: `topk(1, metric)`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histogram in topk aggregation (1:1)`,
+			},
+		},
+
+		"bottomk() with only floats": {
+			data: mixedFloatHistogramData,
+			expr: `bottomk(1, metric{type="float"})`,
+		},
+		"bottomk() with only histograms()": {
+			data: mixedFloatHistogramData,
+			expr: `bottomk(1, metric{type="histogram"})`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histogram in bottomk aggregation (1:1)`,
+			},
+		},
+		"bottomk() with both floats and histograms()": {
+			data: mixedFloatHistogramData,
+			expr: `bottomk(1, metric)`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histogram in bottomk aggregation (1:1)`,
+			},
+		},
+
+		"quantile_over_time() with negative quantile": {
+			data: `metric 0 1 2 3`,
+			expr: `quantile_over_time(-1, metric[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: quantile value should be between 0 and 1, got -1 (1:20)`,
+			},
+		},
+		"quantile_over_time() with 0 quantile": {
+			data: `some_metric 0 1 2 3`,
+			expr: `quantile_over_time(0, some_metric[1m1s])`,
+		},
+		"quantile_over_time() with quantile between 0 and 1": {
+			data: `some_metric 0 1 2 3`,
+			expr: `quantile_over_time(0.5, some_metric[1m1s])`,
+		},
+		"quantile_over_time() with 1 quantile": {
+			data: `some_metric 0 1 2 3`,
+			expr: `quantile_over_time(1, some_metric[1m1s])`,
+		},
+		"quantile_over_time() with quantile greater than 1": {
+			data: `some_metric 0 1 2 3`,
+			expr: `quantile_over_time(1.2, some_metric[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: quantile value should be between 0 and 1, got 1.2 (1:20)`,
+			},
+		},
+		"quantile_over_time() over series with only floats": {
+			data: `some_metric 1 2`,
+			expr: `quantile_over_time(0.2, some_metric[1m1s])`,
+		},
+		"quantile_over_time() over series with only histograms": {
+			data: `some_metric {{count:1}} {{count:2}}`,
+			expr: `quantile_over_time(0.2, some_metric[1m1s])`,
+		},
+		"quantile_over_time() over series with both floats and histograms": {
+			data: `some_metric 1 {{count:2}}`,
+			expr: `quantile_over_time(0.2, some_metric[1m1s])`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histograms in a range containing both floats and histograms for metric name "some_metric" (1:20)`,
+			},
+			skipComparisonWithPrometheusReason: "Prometheus' engine emits the wrong annotation, see https://github.com/prometheus/prometheus/pull/16018",
+		},
+
 		"multiple annotations from different operators": {
 			data: `
 				mixed_metric_count       10 {{schema:0 sum:1 count:1 buckets:[1]}}
@@ -2245,6 +2345,24 @@ func TestAnnotations(t *testing.T) {
 				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "other_float_metric" (1:105)`,
 			},
 		},
+	}
+
+	for _, f := range []string{"min_over_time", "max_over_time", "stddev_over_time", "stdvar_over_time"} {
+		testCases[fmt.Sprintf("%v() over series with only floats", f)] = annotationTestCase{
+			data: `some_metric 1 2`,
+			expr: fmt.Sprintf(`%v(some_metric[1m1s])`, f),
+		}
+		testCases[fmt.Sprintf("%v() over series with only histograms", f)] = annotationTestCase{
+			data: `some_metric {{count:1}} {{count:2}}`,
+			expr: fmt.Sprintf(`%v(some_metric[1m1s])`, f),
+		}
+		testCases[fmt.Sprintf("%v() over series with both floats and histograms", f)] = annotationTestCase{
+			data: `some_metric 1 {{count:2}}`,
+			expr: fmt.Sprintf(`%v(some_metric[1m1s])`, f),
+			expectedInfoAnnotations: []string{
+				fmt.Sprintf(`PromQL info: ignored histograms in a range containing both floats and histograms for metric name "some_metric" (1:%v)`, len(f)+2),
+			},
+		}
 	}
 
 	runAnnotationTests(t, testCases)
@@ -2389,6 +2507,54 @@ func TestDeltaAnnotations(t *testing.T) {
 			},
 		},
 	}
+	runAnnotationTests(t, testCases)
+}
+
+func TestDerivPredictLinearAnnotations(t *testing.T) {
+	data := `
+		only_floats 0 1
+		only_histograms {{count:0}} {{count:0}}
+		mixed 0 {{count:0}}
+    `
+
+	testCases := map[string]annotationTestCase{
+		"deriv() over series with only floats": {
+			data: data,
+			expr: `deriv(only_floats[1m1s])`,
+			// Expect no annotations.
+		},
+		"deriv() over series with only histograms": {
+			data: data,
+			expr: `deriv(only_histograms[1m1s])`,
+			// Expect no annotations.
+		},
+		"deriv() over series with both floats and histograms": {
+			data: data,
+			expr: `deriv(mixed[1m1s])`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histograms in a range containing both floats and histograms for metric name "mixed" (1:7)`,
+			},
+		},
+
+		"predict_linear() over series with only floats": {
+			data: data,
+			expr: `predict_linear(only_floats[1m1s], 5)`,
+			// Expect no annotations.
+		},
+		"predict_linear() over series with only histograms": {
+			data: data,
+			expr: `predict_linear(only_histograms[1m1s], 5)`,
+			// Expect no annotations.
+		},
+		"predict_linear() over series with both floats and histograms": {
+			data: data,
+			expr: `predict_linear(mixed[1m1s], 5)`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histograms in a range containing both floats and histograms for metric name "mixed" (1:16)`,
+			},
+		},
+	}
+
 	runAnnotationTests(t, testCases)
 }
 
@@ -2698,20 +2864,20 @@ func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries in
 		t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
 		for _, expr := range expressions {
-			testName := fmt.Sprintf("Expr: %s, Start: %d, End: %d, Interval: %s", expr, start.Unix(), end.Unix(), tr.interval)
-			t.Run(testName, func(t *testing.T) {
-				q, err := prometheusEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
-				require.NoError(t, err)
-				defer q.Close()
-				prometheusResults := q.Exec(context.Background())
+			// We run so many combinations that calling t.Run() for each of them has a noticeable performance impact.
+			// So we instead just log the test case before we run it.
+			t.Logf("Expr: %s, Start: %d, End: %d, Interval: %s", expr, start.Unix(), end.Unix(), tr.interval)
+			q, err := prometheusEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
+			require.NoError(t, err)
+			defer q.Close()
+			prometheusResults := q.Exec(context.Background())
 
-				q, err = mimirEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
-				require.NoError(t, err)
-				defer q.Close()
-				mimirResults := q.Exec(context.Background())
+			q, err = mimirEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
+			require.NoError(t, err)
+			defer q.Close()
+			mimirResults := q.Exec(context.Background())
 
-				testutils.RequireEqualResults(t, expr, prometheusResults, mimirResults, skipAnnotationComparison)
-			})
+			testutils.RequireEqualResults(t, expr, prometheusResults, mimirResults, skipAnnotationComparison)
 		}
 	}
 }
@@ -2723,10 +2889,8 @@ func TestCompareVariousMixedMetricsFunctions(t *testing.T) {
 
 	// Test each label individually to catch edge cases in with single series
 	labelCombinations := testutils.Combinations(labelsToUse, 1)
-	// Generate combinations of 2, 3, and 4 labels. (e.g., "a,b", "e,f", "c,d,e", "a,b,c,d", "c,d,e,f" etc)
+	// Generate combinations of 2 labels. (e.g., "a,b", "e,f" etc)
 	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 2)...)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 3)...)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 4)...)
 
 	expressions := []string{}
 
@@ -2743,6 +2907,7 @@ func TestCompareVariousMixedMetricsFunctions(t *testing.T) {
 		expressions = append(expressions, fmt.Sprintf(`histogram_stddev(series{label=~"(%s)"})`, labelRegex))
 		expressions = append(expressions, fmt.Sprintf(`histogram_stdvar(series{label=~"(%s)"})`, labelRegex))
 		expressions = append(expressions, fmt.Sprintf(`histogram_sum(series{label=~"(%s)"})`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`timestamp(series{label=~"(%s)"})`, labelRegex))
 	}
 
 	// We skip comparing the annotation results as Prometheus does not output any series name
@@ -2844,21 +3009,21 @@ func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 
 	// Test each label individually to catch edge cases in with single series
 	labelCombinations := testutils.Combinations(labelsToUse, 1)
-	// Generate combinations of 2, 3, and 4 labels. (e.g., "a,b", "e,f", "c,d,e", "a,b,c,d", "c,d,e,f" etc)
+	// Generate combinations of 2 labels. (e.g., "a,b", "e,f" etc)
 	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 2)...)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 3)...)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 4)...)
 
 	expressions := []string{}
 
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
-		for _, function := range []string{"rate", "increase", "changes", "resets", "deriv", "irate", "idelta", "delta"} {
+		for _, function := range []string{"rate", "increase", "changes", "resets", "deriv", "irate", "idelta", "delta", "deriv", "stddev_over_time", "stdvar_over_time"} {
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[45s])`, function, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[1m])`, function, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`sum(%s(series{label=~"(%s)"}[2m15s]))`, function, labelRegex))
-			expressions = append(expressions, fmt.Sprintf(`sum(%s(series{label=~"(%s)"}[5m]))`, function, labelRegex))
 		}
+
+		expressions = append(expressions, fmt.Sprintf(`predict_linear(series{label=~"(%s)"}[1m], 30)`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`quantile_over_time(scalar(series{label="i"}), series{label=~"(%s)"}[1m])`, labelRegex))
 	}
 
 	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, false)
