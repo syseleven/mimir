@@ -212,6 +212,7 @@ func (cfg *Config) statusFlagsHandler() http.HandlerFunc {
 // server to fulfill the Prometheus query API.
 func NewQuerierHandler(
 	cfg Config,
+	querierCfg querier.Config,
 	queryable storage.SampleAndChunkQueryable,
 	exemplarQueryable storage.ExemplarQueryable,
 	metadataSupplier querier.MetadataSupplier,
@@ -223,30 +224,26 @@ func NewQuerierHandler(
 ) http.Handler {
 	// Prometheus histograms for requests to the querier.
 	querierRequestDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "cortex",
-		Name:      "querier_request_duration_seconds",
-		Help:      "Time (in seconds) spent serving HTTP requests to the querier.",
-		Buckets:   instrument.DefBuckets,
+		Name:    "cortex_querier_request_duration_seconds",
+		Help:    "Time (in seconds) spent serving HTTP requests to the querier.",
+		Buckets: instrument.DefBuckets,
 	}, []string{"method", "route", "status_code", "ws"})
 
 	receivedMessageSize := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "cortex",
-		Name:      "querier_request_message_bytes",
-		Help:      "Size (in bytes) of messages received in the request to the querier.",
-		Buckets:   middleware.BodySizeBuckets,
+		Name:    "cortex_querier_request_message_bytes",
+		Help:    "Size (in bytes) of messages received in the request to the querier.",
+		Buckets: middleware.BodySizeBuckets,
 	}, []string{"method", "route"})
 
 	sentMessageSize := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "cortex",
-		Name:      "querier_response_message_bytes",
-		Help:      "Size (in bytes) of messages sent in response by the querier.",
-		Buckets:   middleware.BodySizeBuckets,
+		Name:    "cortex_querier_response_message_bytes",
+		Help:    "Size (in bytes) of messages sent in response by the querier.",
+		Buckets: middleware.BodySizeBuckets,
 	}, []string{"method", "route"})
 
 	inflightRequests := promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "cortex",
-		Name:      "querier_inflight_requests",
-		Help:      "Current number of inflight requests to the querier.",
+		Name: "cortex_querier_inflight_requests",
+		Help: "Current number of inflight requests to the querier.",
 	}, []string{"method", "route"})
 
 	const (
@@ -286,8 +283,10 @@ func NewQuerierHandler(
 		nil,
 		otlpEnabled,
 		false,
+		false,
 		true,
 		0,
+		querierCfg.EngineConfig.LookbackDelta,
 	)
 
 	api.InstallCodec(protobufCodec{})
@@ -328,7 +327,7 @@ func NewQuerierHandler(
 
 	// TODO(gotjosh): This custom handler is temporary until we're able to vendor the changes in:
 	// https://github.com/prometheus/prometheus/pull/7125/files
-	router.Path(path.Join(prefix, "/api/v1/read")).Methods("POST").Handler(remoteReadStats.Wrap(querier.RemoteReadHandler(queryable, logger)))
+	router.Path(path.Join(prefix, "/api/v1/read")).Methods("POST").Handler(remoteReadStats.Wrap(querier.RemoteReadHandler(queryable, logger, querierCfg)))
 	router.Path(path.Join(prefix, "/api/v1/query")).Methods("GET", "POST").Handler(instantQueryStats.Wrap(promRouter))
 	router.Path(path.Join(prefix, "/api/v1/query_range")).Methods("GET", "POST").Handler(rangeQueryStats.Wrap(promRouter))
 	router.Path(path.Join(prefix, "/api/v1/query_exemplars")).Methods("GET", "POST").Handler(exemplarsQueryStats.Wrap(promRouter))

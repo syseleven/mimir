@@ -21,10 +21,11 @@
             "includeVars": true,
             "keepTime": true,
             "tags": [
-               "mimir"
+               "mimir",
+               "gem"
             ],
             "targetBlank": false,
-            "title": "Mimir dashboards",
+            "title": "GEM dashboards",
             "type": "dashboards"
          }
       ],
@@ -1076,6 +1077,30 @@
                         {
                            "matcher": {
                               "id": "byName",
+                              "options": "samples_processed"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "samples_processed_cache_adjusted"
+                           },
+                           "properties": [
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
                               "options": "Time span"
                            },
                            "properties": [
@@ -1259,6 +1284,14 @@
                               },
                               {
                                  "destinationType": "number",
+                                 "targetField": "samples_processed"
+                              },
+                              {
+                                 "destinationType": "number",
+                                 "targetField": "samples_processed_cache_adjusted"
+                              },
+                              {
+                                 "destinationType": "number",
                                  "targetField": "Time span"
                               },
                               {
@@ -1295,7 +1328,8 @@
       "schemaVersion": 14,
       "style": "dark",
       "tags": [
-         "mimir"
+         "mimir",
+         "gem"
       ],
       "templating": {
          "list": [
@@ -1481,7 +1515,7 @@
          ]
       },
       "timezone": "utc",
-      "title": "Mimir / Slow queries",
+      "title": "GEM / Slow queries",
       "uid": "6089e1ce1e678788f46312a0a1e647e6",
       "version": 0
    }

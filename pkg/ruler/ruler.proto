@@ -9,7 +9,7 @@
 syntax = "proto3";
 package ruler;
 
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
@@ -44,6 +44,7 @@ message RulesRequest {
 
 message RulesResponse {
   repeated GroupStateDesc groups = 1;
+  repeated string warnings = 2;
 }
 
 // SyncRulesRequest is the message sent to request a ruler to re-synchronize the rules of 1+ tenants.

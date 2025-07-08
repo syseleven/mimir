@@ -63,7 +63,6 @@
         ),
       )
     ),
-    JAEGER_REPORTER_MAX_QUEUE_SIZE: std.toString(1000),
   },
 
   distributor_node_affinity_matchers:: [],
@@ -76,7 +75,7 @@
     $.util.resourcesRequests('2', '2Gi') +
     $.util.resourcesLimits(null, '4Gi') +
     $.util.readinessProbe +
-    $.jaeger_mixin,
+    $.tracing_env_mixin,
 
   distributor_container::
     $.newDistributorContainer('distributor', $.distributor_args, $.distributor_env_map),
@@ -91,13 +90,13 @@
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +
     deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(termination_grace_period_seconds),
 
-  distributor_deployment: if !$._config.is_microservices_deployment_mode then null else
+  distributor_deployment:
     $.newDistributorDeployment('distributor', $.distributor_container, $.distributor_node_affinity_matchers),
 
-  distributor_service: if !$._config.is_microservices_deployment_mode then null else
+  distributor_service:
     $.util.serviceFor($.distributor_deployment, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),
 
-  distributor_pdb: if !$._config.is_microservices_deployment_mode then null else
+  distributor_pdb:
     $.newMimirPdb('distributor'),
 }

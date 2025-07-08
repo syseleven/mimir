@@ -93,8 +93,7 @@
             and
             (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (thanos_objstore_bucket_last_successful_upload_time{component="compactor"}) > 0)
             and
-            # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do
-            # (e.g. there are more replicas than required because running as part of mimir-backend).
+            # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do.
             (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_compactor_group_compaction_runs_started_total[24h])) > 0)
           ||| % $._config,
           labels: {
@@ -112,8 +111,7 @@
           expr: |||
             (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (thanos_objstore_bucket_last_successful_upload_time{component="compactor"}) == 0)
             and
-            # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do
-            # (e.g. there are more replicas than required because running as part of mimir-backend).
+            # Only if some compactions have started. We don't want to fire this alert if the compactor has nothing to do.
             (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_compactor_group_compaction_runs_started_total[24h])) > 0)
           ||| % $._config,
           labels: {
@@ -151,6 +149,22 @@
           },
           annotations: {
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has found and ignored unhealthy blocks.' % $._config,
+          },
+        },
+        // Alert if compactor has failed to build sparse-index headers.
+        {
+          alert: $.alertName('CompactorFailingToBuildSparseIndexHeaders'),
+          'for': '30m',
+          expr: |||
+            (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (increase(cortex_compactor_build_sparse_headers_failures_total[%(range_interval)s])) > 0)
+          ||| % $._config {
+            range_interval: $.alertRangeInterval(5),
+          },
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s is failing to build sparse index headers' % $._config,
           },
         },
       ],

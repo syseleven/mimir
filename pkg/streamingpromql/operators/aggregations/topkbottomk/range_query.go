@@ -18,9 +18,9 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
@@ -31,7 +31,7 @@ type RangeQuery struct {
 	TimeRange                types.QueryTimeRange
 	Grouping                 []string // If this is a 'without' aggregation, New will ensure that this slice contains __name__.
 	Without                  bool
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	IsTopK                   bool // If false, this is operator is for bottomk().
 
 	expressionPosition posrange.PositionRange
@@ -116,7 +116,7 @@ func (t *RangeQuery) getK(ctx context.Context) error {
 		return err
 	}
 
-	defer types.FPointSlicePool.Put(paramValues.Samples, t.MemoryConsumptionTracker)
+	defer types.FPointSlicePool.Put(&paramValues.Samples, t.MemoryConsumptionTracker)
 
 	t.k, err = types.Int64SlicePool.Get(t.TimeRange.StepCount, t.MemoryConsumptionTracker)
 	if err != nil {
@@ -244,7 +244,7 @@ func (t *RangeQuery) readNextSeries(ctx context.Context) error {
 	}
 
 	// topk() and bottomk() ignore histograms, so return the HPoint slice to the pool now.
-	types.HPointSlicePool.Put(nextSeries.Histograms, t.MemoryConsumptionTracker)
+	types.HPointSlicePool.Put(&nextSeries.Histograms, t.MemoryConsumptionTracker)
 
 	g := t.remainingInnerSeriesToGroup[0]
 	t.remainingInnerSeriesToGroup = t.remainingInnerSeriesToGroup[1:]
@@ -252,7 +252,7 @@ func (t *RangeQuery) readNextSeries(ctx context.Context) error {
 		return err
 	}
 
-	types.FPointSlicePool.Put(nextSeries.Floats, t.MemoryConsumptionTracker)
+	types.FPointSlicePool.Put(&nextSeries.Floats, t.MemoryConsumptionTracker)
 
 	return nil
 }
@@ -387,27 +387,54 @@ func (t *RangeQuery) accumulatePointIntoGroup(g *rangeQueryGroup, timestampIndex
 
 func (t *RangeQuery) returnGroupToPool(g *rangeQueryGroup) {
 	for _, ts := range g.seriesForTimestamps {
-		types.IntSlicePool.Put(ts, t.MemoryConsumptionTracker)
+		types.IntSlicePool.Put(&ts, t.MemoryConsumptionTracker)
 	}
 
-	intSliceSlicePool.Put(g.seriesForTimestamps, t.MemoryConsumptionTracker)
-	rangeQuerySeriesSlicePool.Put(g.series, t.MemoryConsumptionTracker)
+	intSliceSlicePool.Put(&g.seriesForTimestamps, t.MemoryConsumptionTracker)
+	rangeQuerySeriesSlicePool.Put(&g.series, t.MemoryConsumptionTracker)
 }
 
 func (t *RangeQuery) returnSeriesToPool(series rangeQuerySeries) {
-	types.BoolSlicePool.Put(series.shouldReturnPoint, t.MemoryConsumptionTracker)
-	types.Float64SlicePool.Put(series.values, t.MemoryConsumptionTracker)
+	types.BoolSlicePool.Put(&series.shouldReturnPoint, t.MemoryConsumptionTracker)
+	types.Float64SlicePool.Put(&series.values, t.MemoryConsumptionTracker)
+}
+
+func (t *RangeQuery) returnGroupAndSeriesToPool(g *rangeQueryGroup, firstSeriesIdxToReturn int) {
+	for _, s := range g.series[firstSeriesIdxToReturn:] {
+		t.returnSeriesToPool(s)
+	}
+
+	t.returnGroupToPool(g)
+
 }
 
 func (t *RangeQuery) ExpressionPosition() posrange.PositionRange {
 	return t.expressionPosition
 }
 
+func (t *RangeQuery) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	if err := t.Inner.Prepare(ctx, params); err != nil {
+		return err
+	}
+	return t.Param.Prepare(ctx, params)
+}
+
 func (t *RangeQuery) Close() {
 	t.Inner.Close()
 	t.Param.Close()
 
-	types.Int64SlicePool.Put(t.k, t.MemoryConsumptionTracker)
+	types.Int64SlicePool.Put(&t.k, t.MemoryConsumptionTracker)
+
+	if t.currentGroup != nil {
+		t.returnGroupAndSeriesToPool(t.currentGroup, t.seriesIndexInCurrentGroup)
+		t.currentGroup = nil
+	}
+
+	for _, g := range t.remainingGroups {
+		t.returnGroupAndSeriesToPool(g, 0)
+	}
+
+	t.remainingGroups = nil
 }
 
 type rangeQueryGroup struct {
@@ -429,7 +456,7 @@ type rangeQuerySeries struct {
 	values            []float64 // One entry per timestamp with value for that timestamp (entry only guaranteed to be populated if value at that timestamp might be returned)
 }
 
-func (s *rangeQuerySeries) ensureSlicesPopulated(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) error {
+func (s *rangeQuerySeries) ensureSlicesPopulated(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
 	if s.shouldReturnPoint != nil {
 		// Slices are already populated, nothing to do.
 		return nil
@@ -466,8 +493,10 @@ var rangeQuerySeriesSlicePool = types.NewLimitingBucketedPool(
 	pool.NewBucketedPool(types.MaxExpectedSeriesPerResult, func(size int) []rangeQuerySeries {
 		return make([]rangeQuerySeries, 0, size)
 	}),
+	limiter.TopKBottomKRangeQuerySeriesSlices,
 	uint64(unsafe.Sizeof(rangeQuerySeries{})),
 	true,
+	nil,
 	nil,
 )
 
@@ -475,8 +504,10 @@ var intSliceSlicePool = types.NewLimitingBucketedPool(
 	pool.NewBucketedPool(types.MaxExpectedPointsPerSeries, func(size int) [][]int {
 		return make([][]int, 0, size)
 	}),
+	limiter.IntSliceSlice,
 	uint64(unsafe.Sizeof([][]int{})),
 	true,
+	nil,
 	nil,
 )
 

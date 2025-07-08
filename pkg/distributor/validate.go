@@ -8,6 +8,7 @@ package distributor
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -119,7 +120,18 @@ var (
 		"received a metric metadata whose unit name length exceeds the limit, unit: '%.200s' metric name: '%.200s'",
 		validation.MaxMetadataLengthFlag,
 	)
+	nativeHistogramCustomBucketsNotReducibleMsgFormat = globalerror.NativeHistogramCustomBucketsNotReducible.Message("received a native histogram sample with more custom buckets than the limit, timestamp: %d series: %s, buckets: %d, limit: %d")
 )
+
+type LabelValueTooLongError struct {
+	Label  mimirpb.LabelAdapter
+	Series []mimirpb.LabelAdapter
+	Limit  int
+}
+
+func (e LabelValueTooLongError) Error() string {
+	return fmt.Sprintf(labelValueTooLongMsgFormat, e.Label.Name, e.Label.Value, mimirpb.FromLabelAdaptersToString(e.Series))
+}
 
 // sampleValidationConfig helps with getting required config to validate sample.
 type sampleValidationConfig interface {
@@ -274,18 +286,20 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 		return false, fmt.Errorf(sampleTimestampTooOldMsgFormat, s.Timestamp, unsafeMetricName)
 	}
 
-	if s.Schema < mimirpb.MinimumHistogramSchema || s.Schema > mimirpb.MaximumHistogramSchema {
+	// Check if schema is either a valid exponential schema or NHCB.
+	if (s.Schema < mimirpb.MinimumHistogramSchema || s.Schema > mimirpb.MaximumHistogramSchema) && s.Schema != mimirpb.NativeHistogramsWithCustomBucketsSchema {
 		cat.IncrementDiscardedSamples(ls, 1, reasonInvalidNativeHistogramSchema, now.Time())
 		m.invalidNativeHistogramSchema.WithLabelValues(userID, group).Inc()
 		return false, fmt.Errorf(invalidSchemaNativeHistogramMsgFormat, s.Schema)
 	}
 
 	if bucketLimit := cfg.MaxNativeHistogramBuckets(userID); bucketLimit > 0 {
-		var bucketCount int
-		if s.IsFloatHistogram() {
-			bucketCount = len(s.GetNegativeCounts()) + len(s.GetPositiveCounts())
-		} else {
-			bucketCount = len(s.GetNegativeDeltas()) + len(s.GetPositiveDeltas())
+		bucketCount := s.BucketCount()
+		if s.Schema == mimirpb.NativeHistogramsWithCustomBucketsSchema {
+			// Custom buckets cannot be scaled down.
+			cat.IncrementDiscardedSamples(ls, 1, reasonMaxNativeHistogramBuckets, now.Time())
+			m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
+			return false, fmt.Errorf(nativeHistogramCustomBucketsNotReducibleMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
 		}
 		if bucketCount > bucketLimit {
 			if !cfg.ReduceNativeHistogramOverMaxBuckets(userID) {
@@ -448,7 +462,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 		} else if len(l.Value) > maxLabelValueLength {
 			cat.IncrementDiscardedSamples(ls, 1, reasonLabelValueTooLong, ts)
 			m.labelValueTooLong.WithLabelValues(userID, group).Inc()
-			return fmt.Errorf(labelValueTooLongMsgFormat, l.Name, l.Value, mimirpb.FromLabelAdaptersToString(ls))
+			return LabelValueTooLongError{Label: l, Series: slices.Clone(ls), Limit: maxLabelValueLength}
 		} else if lastLabelName == l.Name {
 			cat.IncrementDiscardedSamples(ls, 1, reasonDuplicateLabelNames, ts)
 			m.duplicateLabelNames.WithLabelValues(userID, group).Inc()

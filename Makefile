@@ -213,6 +213,8 @@ images: ## Print all image names.
 PROTO_DEFS := $(shell find . $(DONT_FIND) -type f -name '*.proto' -print)
 PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
 
+PROMQL_TESTS := $(shell find pkg/streamingpromql/testdata/ours pkg/streamingpromql/testdata/ours-only $(DONT_FIND) -type f -path '*.test' -print)
+
 # Generating OTLP translation code is automated.
 OTLP_GOS := $(shell find ./pkg/distributor/otlp/ -type f -name '*_generated.go' -print)
 
@@ -239,18 +241,18 @@ all: $(UPTODATE_FILES)
 test: protos
 test-with-race: protos
 mod-check: protos
-lint: lint-gh-action lint-packaging-scripts protos
+lint: lint-gh-action lint-packaging-scripts protos check-promql-tests
 mimir-build-image/$(UPTODATE): mimir-build-image/*
 
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr10708-6841577474
+LATEST_BUILD_IMAGE_TAG ?= pr11747-73ebde0521
 
-# TTY is parameterized to allow Google Cloud Builder to run builds,
-# as it currently disallows TTY devices. This value needs to be overridden
-# in any custom cloudbuild.yaml files
-TTY := --tty
+# TTY is parameterized to allow CI and scripts to run builds,
+# as it currently disallows TTY devices.
+# Auto-detect TTY availability: use --tty if stdin is a TTY, otherwise empty
+TTY := $(shell test -t 0 && echo --tty || echo)
 MIMIR_VERSION := github.com/grafana/mimir/pkg/util/version
 
 REGO_POLICIES_PATH=operations/policies
@@ -270,7 +272,7 @@ GOVOLUMES=	-v mimir-go-cache:/go/cache \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version: fetch-build-image
+exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests generate-otlp: fetch-build-image
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
 
@@ -454,6 +456,19 @@ lint: check-makefiles
 		"github.com/twmb/franz-go/pkg/kgo.{AllowAutoTopicCreation}" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
+	# We don't use opentracing anymore.
+	faillint -paths \
+		"github.com/opentracing/opentracing-go,github.com/opentracing/opentracing-go/log,github.com/uber/jaeger-client-go,github.com/opentracing-contrib/go-stdlib/nethttp" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
+
+	# Ensure lines are sorted after lint:sorted directives.
+	go run ./tools/lint-sorted/ \
+		-path ./pkg \
+		-path ./cmd \
+		-path ./tools \
+		-path ./integration \
+		-include '*.go'
+
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;
@@ -487,6 +502,12 @@ mod-check: ## Check the go mod is clean and tidy.
 check-protos: ## Check the protobuf files are up to date.
 check-protos: clean-protos protos
 	@./tools/find-diff-or-untracked.sh $(PROTO_GOS) || (echo "Please rebuild protobuf code by running 'check-protos'" && false)
+
+format-promql-tests:
+	@./tools/format-promql-test.sh $(PROMQL_TESTS)
+
+check-promql-tests: format-promql-tests
+	@./tools/find-diff-or-untracked.sh $(PROMQL_TESTS) || (echo "Please format PromQL test files by running 'format-promql-tests'" && false)
 
 %.md : %.template
 	go run ./tools/doc-generator $< > $@
@@ -539,9 +560,9 @@ dist: ## Generates binaries for a Mimir release.
 			echo "Building mimir-continuous-test for $$os/$$arch"; \
 			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-continuous-test-$$os-$$arch$$suffix ./cmd/mimir-continuous-test; \
 			sha256sum ./dist/mimir-continuous-test-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimir-continuous-test-$$os-$$arch$$suffix-sha-256; \
-			echo "Building markblocks for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/markblocks-$$os-$$arch$$suffix ./tools/markblocks; \
-			sha256sum ./dist/markblocks-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/markblocks-$$os-$$arch$$suffix-sha-256; \
+			echo "Building mark-blocks for $$os/$$arch"; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mark-blocks-$$os-$$arch$$suffix ./tools/mark-blocks; \
+			sha256sum ./dist/mark-blocks-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mark-blocks-$$os-$$arch$$suffix-sha-256; \
 			done; \
 		done; \
 		touch $@
@@ -598,6 +619,14 @@ helm-conftest-test: build-helm-tests helm-conftest-quick-test
 check-helm-tests: ## Check the helm golden records.
 check-helm-tests: build-helm-tests helm-conftest-test
 	@./tools/find-diff-or-untracked.sh $(HELM_REFERENCE_MANIFESTS) || (echo "Rebuild the Helm tests output by running 'make build-helm-tests' and commit the changes" && false)
+
+.PHONY: generate-otlp
+generate-otlp:
+	cd pkg/distributor/otlp && rm -f *_generated.go && go generate
+
+.PHONY: check-generated-otlp-code
+check-generated-otlp-code: generate-otlp
+	@./tools/find-diff-or-untracked.sh $(OTLP_GOS) || (echo "Please rebuild OTLP code by running 'make generate-otlp'" && false)
 
 endif
 
@@ -743,9 +772,6 @@ integration-tests-race: export MIMIR_IMAGE=$(IMAGE_PREFIX)mimir:$(IMAGE_TAG_RACE
 integration-tests-race: cmd/mimir/$(UPTODATE_RACE)
 	go test -timeout 30m -tags=requires_docker,stringlabels ./integration/...
 
-web-serve:
-	cd website && hugo --config config.toml --minify -v server
-
 # Those vars are needed for packages target
 export VERSION
 
@@ -769,11 +795,3 @@ test-packages: packages packaging/rpm/centos-systemd/$(UPTODATE) packaging/deb/d
 
 docs: doc
 	cd docs && $(MAKE) docs
-
-.PHONY: generate-otlp
-generate-otlp:
-	cd pkg/distributor/otlp && rm -f *_generated.go && go generate
-
-.PHONY: check-generated-otlp-code
-check-generated-otlp-code: generate-otlp
-	@./tools/find-diff-or-untracked.sh $(OTLP_GOS) || (echo "Please rebuild OTLP code by running 'make generate-otlp'" && false)
