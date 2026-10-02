@@ -29,6 +29,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [BUGFIX] Memcached: Do not render empty `volumes` and `volumeMounts` fields in the memcached-based caches StatefulSets (chunks-cache, index-cache, metadata-cache, results-cache, admin-cache and the graphite caches) when no extra volumes or volume mounts are configured, to avoid `null` values.
+
 ## 5.8.0
 
 * [CHANGE] KEDA Autoscaling: Changed toPromQLLabelSelector from object to list of strings, adding support for all PromQL operators. #10945

@@ -45,7 +45,6 @@ spec:
           type: RuntimeDefault
       
       terminationGracePeriodSeconds: 60
-      volumes:
       containers:
         - name: memcached
           image: memcached:1.6.38-alpine
@@ -72,7 +71,6 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          volumeMounts:
         - name: exporter
           image: prom/memcached-exporter:v0.15.3
           imagePullPolicy: IfNotPresent
